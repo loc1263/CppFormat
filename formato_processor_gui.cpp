@@ -1,6 +1,18 @@
+#define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <commctrl.h>
 #include <commdlg.h>
+
+// Ensure common controls are properly initialized
+#pragma comment(linker,"\"/manifestdependency:type='win32' \
+name='Microsoft.Windows.Common-Controls' \
+version='6.0.0.0' \
+processorArchitecture='*' \
+publicKeyToken='6595b64144ccf1df' \
+language='*'")
+
+// For visual styles
+#pragma comment(lib, "Comctl32.lib")
 #include <string>
 #include <vector>
 #include <sstream>
@@ -46,15 +58,19 @@ const char* ERRORS[] = {
 
 using namespace std;
 
-// Window dimensions
-const int WINDOW_WIDTH = 600;
-const int WINDOW_HEIGHT = 400;
+// Window dimensions - Slightly larger for modern UI
+const int WINDOW_WIDTH = 650;
+const int WINDOW_HEIGHT = 450;
 
-// Control dimensions and spacing
-const int CONTROL_PADDING = 10;
-const int LABEL_WIDTH = 100;
-const int CONTROL_WIDTH = 400;
-const int BUTTON_WIDTH = 100;
+// Modern Windows 10 style dimensions and spacing (in pixels)
+const int CONTROL_PADDING = 16;          // More padding for modern look
+const int CONTROL_WIDTH = 350;            // Wider controls for better usability
+const int BUTTON_WIDTH = 100;             // Slightly wider buttons for modern UI
+const int BUTTON_HEIGHT = 32;             // Taller buttons for touch support
+const int EDIT_HEIGHT = 28;               // Taller edit controls for touch support
+const int LABEL_HEIGHT = 20;              // Slightly taller labels for better readability
+const int LABEL_WIDTH = 160;              // Width for labels (fits "Archivo de entrada:" with more space)
+const int VERTICAL_SPACING = 1;         // More vertical spacing for modern UI
 
 #pragma comment(lib, "comdlg32.lib")
 #pragma comment(lib, "comctl32.lib")
@@ -318,13 +334,19 @@ void MainWindow::Create() {
         return;
     }
 
+    // Create the main window with modern style
     hwnd = CreateWindowEx(
-        0, "FormatoProcessorClass", "Procesador de Formato",
-        WS_OVERLAPPEDWINDOW | WS_VISIBLE,
+        0,
+        "FormatoProcessorClass",
+        "Formato Processor",
+        WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_CLIPCHILDREN,
         CW_USEDEFAULT, CW_USEDEFAULT,
         WINDOW_WIDTH, WINDOW_HEIGHT,
         NULL, NULL, hInstance, this
     );
+    
+    // Set window background color to white
+    SetClassLongPtr(hwnd, GCLP_HBRBACKGROUND, (LONG_PTR)GetStockObject(WHITE_BRUSH));
 
     if (!hwnd) {
         MessageBox(NULL, "Error al crear la ventana", "Error", MB_ICONERROR);
@@ -342,111 +364,150 @@ void MainWindow::Show() {
 }
 
 void MainWindow::InitializeControls() {
-    const int VERTICAL_SPACING = 30;
-    const int LABEL_HEIGHT = 25;
-    const int EDIT_HEIGHT = 25;
-    const int BUTTON_HEIGHT = 25;
-    const int STATUS_HEIGHT = 30;
+    // Using standard Windows control heights
+    const int STATUS_HEIGHT = 24;  // Standard status bar height
 
     int y = CONTROL_PADDING;
+    
+    // First row: CSV file
     CreateWindowEx(
         0, "STATIC", "Open CSV:",
-        WS_CHILD | WS_VISIBLE,
+        WS_CHILD | WS_VISIBLE | SS_LEFT,
         CONTROL_PADDING, y,
         LABEL_WIDTH, LABEL_HEIGHT,
         hwnd, NULL, NULL, NULL
     );
+    y += LABEL_HEIGHT + 4;  // Add small gap between label and control
 
     hwndCsvFile = CreateWindowEx(
-        0, "EDIT", "",
-        WS_CHILD | WS_VISIBLE | WS_BORDER,
-        CONTROL_PADDING + LABEL_WIDTH + 10, y,
+        WS_EX_CLIENTEDGE, "EDIT", "",
+        WS_CHILD | WS_VISIBLE | WS_TABSTOP,
+        CONTROL_PADDING, y,
         CONTROL_WIDTH, EDIT_HEIGHT,
         hwnd, NULL, NULL, NULL
     );
 
     CreateWindowEx(
         0, "BUTTON", "Open CSV",
-        WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-        CONTROL_PADDING + LABEL_WIDTH + CONTROL_WIDTH + 20, y,
+        WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
+        CONTROL_PADDING + CONTROL_WIDTH + 10, y,
         BUTTON_WIDTH, BUTTON_HEIGHT,
         hwnd, (HMENU)2, NULL, NULL
     );
+    
+    // Set font for controls
+    HFONT hControlFont = (HFONT)GetStockObject(DEFAULT_GUI_FONT);
+    SendMessage(hwndCsvFile, WM_SETFONT, (WPARAM)hControlFont, TRUE);
 
-    y += VERTICAL_SPACING;
+    y += EDIT_HEIGHT + VERTICAL_SPACING;
 
+    // Second row: Input file
+    y += EDIT_HEIGHT + VERTICAL_SPACING;
+    
     CreateWindowEx(
         0, "STATIC", "Archivo de entrada:",
-        WS_CHILD | WS_VISIBLE,
+        WS_CHILD | WS_VISIBLE | SS_LEFT,
         CONTROL_PADDING, y,
         LABEL_WIDTH, LABEL_HEIGHT,
         hwnd, NULL, NULL, NULL
     );
+    y += LABEL_HEIGHT + 4;  // Add small gap between label and control
 
     hwndInputFile = CreateWindowEx(
-        0, "EDIT", "",
-        WS_CHILD | WS_VISIBLE | WS_BORDER,
-        CONTROL_PADDING + LABEL_WIDTH + 10, y,
+        WS_EX_CLIENTEDGE, "EDIT", "",
+        WS_CHILD | WS_VISIBLE | WS_TABSTOP,
+        CONTROL_PADDING, y,
         CONTROL_WIDTH, EDIT_HEIGHT,
         hwnd, NULL, NULL, NULL
     );
 
     CreateWindowEx(
         0, "BUTTON", "Open Input File",
-        WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-        CONTROL_PADDING + LABEL_WIDTH + CONTROL_WIDTH + 20, y,
+        WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
+        CONTROL_PADDING + CONTROL_WIDTH + 10, y,
         BUTTON_WIDTH, BUTTON_HEIGHT,
         hwnd, (HMENU)3, NULL, NULL
     );
-
-    y += VERTICAL_SPACING;
-
+    
+    // Set font for input file controls
+    SendMessage(hwndInputFile, WM_SETFONT, (WPARAM)hControlFont, TRUE);
+    
+    y += EDIT_HEIGHT + VERTICAL_SPACING;
+    
+    // Separator section
+    y += EDIT_HEIGHT + VERTICAL_SPACING;
+    
     CreateWindowEx(
         0, "STATIC", "Separador:",
-        WS_CHILD | WS_VISIBLE,
+        WS_CHILD | WS_VISIBLE | SS_LEFT,
         CONTROL_PADDING, y,
         LABEL_WIDTH, LABEL_HEIGHT,
         hwnd, NULL, NULL, NULL
     );
+    y += LABEL_HEIGHT + 4;  // Add small gap between label and control
 
     hwndSeparator = CreateWindowEx(
-        0, "EDIT", ",",
-        WS_CHILD | WS_VISIBLE | WS_BORDER,
-        CONTROL_PADDING + LABEL_WIDTH + 10, y,
-        CONTROL_WIDTH, EDIT_HEIGHT,
+        WS_EX_CLIENTEDGE, "EDIT", ",",
+        WS_CHILD | WS_VISIBLE | WS_TABSTOP,
+        CONTROL_PADDING, y,
+        50, EDIT_HEIGHT,  // Smaller width for separator field
         hwnd, NULL, NULL, NULL
     );
+    
+    // Set font for separator control
+    SendMessage(hwndSeparator, WM_SETFONT, (WPARAM)hControlFont, TRUE);
+    
+    y += EDIT_HEIGHT + VERTICAL_SPACING;
 
-    y += VERTICAL_SPACING;
-
+    // Process and Close buttons row
+    const int BUTTON_SPACING = 20;
+    const int TOTAL_BUTTONS_WIDTH = (BUTTON_WIDTH + 20) * 2 + BUTTON_SPACING;
+    int buttonsStartX = (WINDOW_WIDTH - TOTAL_BUTTONS_WIDTH) / 2;
+    
+    // Process button
     hwndProcessButton = CreateWindowEx(
-        0, "BUTTON", "Procesar",
-        WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-        CONTROL_PADDING + LABEL_WIDTH + 10, y,
-        CONTROL_WIDTH / 2 - 10, BUTTON_HEIGHT,
+        0, "BUTTON", "PROCESAR",
+        WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON | BS_CENTER | BS_VCENTER,
+        buttonsStartX, y,
+        BUTTON_WIDTH + 20, BUTTON_HEIGHT + 8,  // Larger button
         hwnd, (HMENU)1, NULL, NULL
     );
-
-    CreateWindowEx(
-        0, "BUTTON", "Cerrar",
-        WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-        CONTROL_PADDING + LABEL_WIDTH + CONTROL_WIDTH / 2 + 10, y,
-        CONTROL_WIDTH / 2 - 10, BUTTON_HEIGHT,
+    
+    // Close button
+    HWND hwndCloseButton = CreateWindowEx(
+        0, "BUTTON", "CERRAR",
+        WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON | BS_CENTER | BS_VCENTER,
+        buttonsStartX + BUTTON_WIDTH + 20 + BUTTON_SPACING, y,
+        BUTTON_WIDTH + 20, BUTTON_HEIGHT + 8,  // Same size as process button
         hwnd, (HMENU)4, NULL, NULL
     );
-
-    y += VERTICAL_SPACING;
-
+    
+    // Set font for buttons (slightly larger and bold)
+    LOGFONT lf = {0};
+    GetObject(GetStockObject(DEFAULT_GUI_FONT), sizeof(LOGFONT), &lf);
+    lf.lfWeight = FW_SEMIBOLD;
+    HFONT hButtonFont = CreateFontIndirect(&lf);
+    SendMessage(hwndProcessButton, WM_SETFONT, (WPARAM)hButtonFont, TRUE);
+    SendMessage(hwndCloseButton, WM_SETFONT, (WPARAM)hButtonFont, TRUE);
+    
+    y += BUTTON_HEIGHT + 8 + VERTICAL_SPACING * 2;
+    
+    // Create modern status bar with dark theme support
     hwndStatus = CreateWindowEx(
-        0, "STATIC", "",
-        WS_CHILD | WS_VISIBLE | SS_LEFT,
-        CONTROL_PADDING, y,
-        WINDOW_WIDTH - 2 * CONTROL_PADDING, STATUS_HEIGHT,
-        hwnd, NULL, NULL, NULL
+        0, STATUSCLASSNAME, "",
+        WS_CHILD | WS_VISIBLE | SBARS_SIZEGRIP,
+        0, 0, 0, 0,
+        hwnd, (HMENU)100, NULL, NULL
     );
+    
+    // Set font for status bar
+    SendMessage(hwndStatus, WM_SETFONT, (WPARAM)hControlFont, TRUE);
+
+    // Set status bar parts and initial text
+    int parts[] = { -1 };
+    SendMessage(hwndStatus, SB_SETPARTS, 1, (LPARAM)parts);
+    SendMessage(hwndStatus, SB_SETTEXT, 0, (LPARAM)"Listo");
 }
-
-
 
 void MainWindow::HandleCommand(WPARAM wParam) {
     switch (LOWORD(wParam)) {
@@ -460,7 +521,7 @@ void MainWindow::HandleCommand(WPARAM wParam) {
             HandleInputFileSelect();
             break;
         case 4:  // Close button
-            PostQuitMessage(0);
+            PostMessage(hwnd, WM_CLOSE, 0, 0);
             break;
     }
 }
