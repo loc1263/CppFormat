@@ -44,21 +44,45 @@ public:
     void parse(const string& csv_str) {
         istringstream csvStream(csv_str);
         string line;
+        int lineNum = 0;
         
         while (getline(csvStream, line)) {
+            lineNum++;
+            
+            // Trim whitespace from the line
+            line.erase(0, line.find_first_not_of(" \t\r\n\f\v"));
+            line.erase(line.find_last_not_of(" \t\r\n\f\v") + 1);
+            
             if (line.empty()) continue;
             
-            istringstream lineStream(line);
-            string fieldName, sizeStr;
-            
-            if (!getline(lineStream, fieldName, ',') || !getline(lineStream, sizeStr)) {
-                throw runtime_error(ERRORS[1]);
+            // Find the first comma
+            size_t commaPos = line.find(',');
+            if (commaPos == string::npos) {
+                throw runtime_error(string(ERRORS[1]) + " on line " + to_string(lineNum));
             }
             
-            int size = stoi(sizeStr);
-            if (size <= 0) throw runtime_error(ERRORS[3]);
+            // Extract field name and size
+            string fieldName = line.substr(0, commaPos);
+            string sizeStr = line.substr(commaPos + 1);
             
-            fields.push_back({fieldName, size});
+            // Trim whitespace from field name and size
+            fieldName.erase(0, fieldName.find_first_not_of(" \t"));
+            fieldName.erase(fieldName.find_last_not_of(" \t") + 1);
+            
+            sizeStr.erase(0, sizeStr.find_first_not_of(" \t"));
+            sizeStr.erase(sizeStr.find_last_not_of(" \t") + 1);
+            
+            if (fieldName.empty() || sizeStr.empty()) {
+                throw runtime_error(string(ERRORS[1]) + " on line " + to_string(lineNum));
+            }
+            
+            try {
+                int size = stoi(sizeStr);
+                if (size <= 0) throw runtime_error("");
+                fields.push_back({fieldName, size});
+            } catch (...) {
+                throw runtime_error(string(ERRORS[3]) + " on line " + to_string(lineNum));
+            }
         }
     }
     
@@ -130,21 +154,31 @@ class FileDialog {
     char buffer[1024] = {0};
     
 public:
-    FileDialog(HWND owner, const string& f, const string& t) 
+    FileDialog(HWND owner, const char* f, const string& t) 
         : hwndOwner(owner), filter(f), title(t) {}
     
     string show() {
-        OPENFILENAME ofn = {0};
+        OPENFILENAMEA ofn = {0};
         ofn.lStructSize = sizeof(ofn);
         ofn.hwndOwner = hwndOwner;
-        ofn.lpstrFilter = filter.c_str();
+        
+        // Convert the filter string to the correct format
+        string filterCopy = filter;
+        // Replace all '|' with '\0' in the filter string
+        for (size_t i = 0; i < filterCopy.size(); ++i) {
+            if (filterCopy[i] == '|') filterCopy[i] = '\0';
+        }
+        
+        ofn.lpstrFilter = filterCopy.c_str();
         ofn.nFilterIndex = 1;
         ofn.lpstrFile = buffer;
+        buffer[0] = '\0';
         ofn.nMaxFile = sizeof(buffer);
-        ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST;
+        ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST | OFN_EXPLORER | OFN_HIDEREADONLY | OFN_NOCHANGEDIR;
         ofn.lpstrTitle = title.c_str();
+        ofn.lpstrInitialDir = ".";
         
-        return GetOpenFileName(&ofn) ? buffer : "";
+        return GetOpenFileNameA(&ofn) ? buffer : "";
     }
 };
 
@@ -373,15 +407,18 @@ void MainWindow::InitializeControls() {
         hwnd, (HMENU)1001, hInstance, NULL
     );
 
+    // Note: The filter string needs to be double-null terminated
+    // Each pair is "display name\0pattern\0" and the list ends with "\0\0"
+    // Using | as a separator that we'll convert to null characters
     csvFileDialog = new FileDialog(
         hwnd,
-        "CSV Files (*.csv)\0*.csv\0All Files (*.*)\0*.*\0",
+        "CSV Files (*.csv)|*.csv|All Files (*.*)|*.*|",
         "Select CSV File"
     );
 
     inputFileDialog = new FileDialog(
         hwnd,
-        "Text Files (*.txt)\0*.txt\0All Files (*.*)\0*.*\0",
+        "Text Files (*.txt)|*.txt|All Files (*.*)|*.*|",
         "Select Input File"
     );
 
@@ -389,7 +426,9 @@ void MainWindow::InitializeControls() {
     status.setStatus("Ready");
 
     RECT rc = {0, 0, WINDOW_WIDTH, WINDOW_HEIGHT};
-    AdjustWindowRectEx(&rc, GetWindowStyle(hwnd), FALSE, GetWindowExStyle(hwnd));
+    DWORD style = (DWORD)GetWindowLongPtr(hwnd, GWL_STYLE);
+    DWORD exStyle = (DWORD)GetWindowLongPtr(hwnd, GWL_EXSTYLE);
+    AdjustWindowRectEx(&rc, style, FALSE, exStyle);
     SetWindowPos(hwnd, NULL, 0, 0, rc.right-rc.left, rc.bottom-rc.top, 
                 SWP_NOMOVE | SWP_NOZORDER);
 
@@ -426,6 +465,15 @@ void MainWindow::HandleInputFileSelect() {
     }
 }
 
+void MainWindow::HandleCommand(WPARAM wParam) {
+    switch (LOWORD(wParam)) {
+        case 1: HandleProcess(); break;
+        case 2: HandleCsvFileSelect(); break;
+        case 3: HandleInputFileSelect(); break;
+        case 4: PostQuitMessage(0); break;
+    }
+}
+
 void MainWindow::HandleProcess() {
     try {
         char csvPath[MAX_PATH] = {0};
@@ -448,17 +496,37 @@ void MainWindow::HandleProcess() {
         
         if (!*separator) strcpy_s(separator, ",");
         
-        string outputPath = string(inputPath) + ".processed";
-        string result = processFile(csvPath, inputPath, separator);
-        writeFile(outputPath, result);
-        
-        StatusWindow(hwndStatus).setStatus("File processed successfully");
-        string msg = "File processed successfully.\n\nOutput: " + outputPath;
-        MessageBoxA(hwnd, msg.c_str(), "Success", MB_ICONINFORMATION);
+        try {
+            // Read CSV file first to check for errors
+            string csvContent = readFile(csvPath);
+            if (csvContent.empty()) {
+                throw runtime_error("CSV file is empty");
+            }
+            
+            // Read input file to check for errors
+            string inputContent = readFile(inputPath);
+            if (inputContent.empty()) {
+                throw runtime_error("Input file is empty");
+            }
+            
+            string outputPath = string(inputPath) + ".processed";
+            string result = processFile(csvPath, inputPath, separator);
+            writeFile(outputPath, result);
+            
+            StatusWindow(hwndStatus).setStatus("File processed successfully");
+            string msg = "File processed successfully.\n\nOutput: " + outputPath;
+            MessageBoxA(hwnd, msg.c_str(), "Success", MB_ICONINFORMATION);
+            
+        } catch (const exception& e) {
+            string errorMsg = string("Error processing files. ") + e.what();
+            StatusWindow(hwndStatus).setStatus("Error processing file");
+            MessageBoxA(hwnd, errorMsg.c_str(), "Error", MB_ICONERROR);
+        }
         
     } catch (const exception& e) {
+        string errorMsg = string("Unexpected error: ") + e.what();
         StatusWindow(hwndStatus).setStatus("Error processing file");
-        MessageBoxA(hwnd, e.what(), "Error", MB_ICONERROR);
+        MessageBoxA(hwnd, errorMsg.c_str(), "Error", MB_ICONERROR);
     }
 }
 
