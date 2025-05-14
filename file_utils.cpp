@@ -1,5 +1,5 @@
 #include "file_utils.h"
-#include "csv_parser.h"
+#include "json_parser.h"
 #include <fstream>
 #include <sstream>
 #include <algorithm>
@@ -60,21 +60,21 @@ bool fileExists(const std::string& filePath) {
 #endif
 }
 
-std::string procesarArchivo(const std::string& csvFile, 
+std::string procesarArchivo(const std::string& jsonFile, 
                          const std::string& inputFile, 
                          const std::string& separator) {
-    // Read CSV configuration
-    std::string csvContent = readFile(csvFile);
-    if (csvContent.empty()) {
-        throw std::runtime_error("CSV file is empty");
+    // Read JSON configuration
+    std::string jsonContent = readFile(jsonFile);
+    if (jsonContent.empty()) {
+        throw std::runtime_error("JSON file is empty");
     }
     
-    // Parse CSV configuration
-    CsvConfig config;
+    // Parse JSON configuration
+    JsonConfig config;
     try {
-        config.parse(csvContent);
+        config.parse(jsonContent);
     } catch (const std::exception& e) {
-        throw std::runtime_error(std::string("Error parsing CSV config: ") + e.what());
+        throw std::runtime_error(std::string("Error parsing JSON config: ") + e.what());
     }
     
     // Read input file
@@ -104,7 +104,7 @@ std::string procesarArchivo(const std::string& csvFile,
             // Extract the field value from the fixed-width input
             std::string fieldValue;
             if (currentPos < line.length()) {
-                size_t endPos = std::min(currentPos + field.size, line.length());
+                size_t endPos = std::min(currentPos + field.width, line.length());
                 fieldValue = line.substr(currentPos, endPos - currentPos);
                 currentPos = endPos;
             }
@@ -114,12 +114,12 @@ std::string procesarArchivo(const std::string& csvFile,
             fieldValue.erase(fieldValue.find_last_not_of(" \t\n\r\f\v") + 1);
             
             // Format the field to the specified width
-            if (fieldValue.length() > field.size) {
+            if (fieldValue.length() > field.width) {
                 // Truncate if too long
-                fieldValue = fieldValue.substr(0, field.size);
-            } else if (fieldValue.length() < field.size) {
+                fieldValue = fieldValue.substr(0, field.width);
+            } else if (fieldValue.length() < field.width) {
                 // Pad with spaces if too short
-                fieldValue.append(field.size - fieldValue.length(), ' ');
+                fieldValue.append(field.width - fieldValue.length(), ' ');
             }
             
             formattedLine += fieldValue;

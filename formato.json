@@ -1,0 +1,16 @@
+{
+  "fields": [
+    {"name": "Fecha", "width": 8},
+    {"name": "Tid", "width": 6},
+    {"name": "Codigo_Auth", "width": 8},
+    {"name": "Cod_Comercio", "width": 9},
+    {"name": "Monto_Inicial", "width": 11},
+    {"name": "Monto_Procesamiento", "width": 11},
+    {"name": "trx", "width": 4},
+    {"name": "cuotas", "width": 3},
+    {"name": "fecha_proc", "width": 8},
+    {"name": "Flag", "width": 1},
+    {"name": "Extra", "width": 1},
+    {"name": "Code", "width": 3}
+  ]
+}

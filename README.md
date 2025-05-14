@@ -5,34 +5,35 @@ A Windows GUI application for processing fixed-width text files. The application
 ## Features
 
 - Parse fixed-width text files with configurable field definitions
-- Simple CSV-based configuration for field widths
+- JSON-based configuration for field widths and metadata
 - Customizable output separators (comma, pipe, tab, etc.)
 - Automatic field trimming and padding
 - Modern Windows 10 style GUI
+- Uses nlohmann/json for JSON parsing
 
 ## Configuration
 
 ### Field Definition
 
-Create a CSV file (e.g., `formato.csv`) that defines your fixed-width fields:
+Create a JSON file (e.g., `formato.json`) that defines your fixed-width fields:
 
-```
-field_name,width
-```
-
-Example (`formato.csv`):
-```
-Fecha,8
-Tid,6
-Codigo_Auth,8
-Cod_Comercio,9
-Monto_Inicial,11
-Monto_Procesamiento,11
-trx,4
-cuotas,3
-fecha_proc,8
-Flag,1
-Extra,1
+```json
+{
+  "fields": [
+    {"name": "Fecha", "width": 8},
+    {"name": "Tid", "width": 6},
+    {"name": "Codigo_Auth", "width": 8},
+    {"name": "Cod_Comercio", "width": 9},
+    {"name": "Monto_Inicial", "width": 11},
+    {"name": "Monto_Procesamiento", "width": 11},
+    {"name": "trx", "width": 4},
+    {"name": "cuotas", "width": 3},
+    {"name": "fecha_proc", "width": 8},
+    {"name": "Flag", "width": 1},
+    {"name": "Extra", "width": 1},
+    {"name": "Code", "width": 3}
+  ]
+}
 ```
 
 ### Output Formatting
@@ -67,16 +68,12 @@ CppFormat/
 ### Prerequisites
 - MinGW-w64 with GCC (or compatible C++17 compiler)
 - Windows SDK
-- CMake (recommended) or direct compiler invocation
+- CMake 3.15 or higher
+- Git (for downloading nlohmann/json)
 
 ### Compilation
 
-#### Using g++ directly:
-```bash
-g++ main.cpp main_window.cpp file_utils.cpp -o CppFormat.exe -mwindows -lcomctl32 -lcomdlg32 -lgdi32 -lole32 -lshell32 -loleaut32 -luuid -std=c++17
-```
-
-#### Using CMake:
+#### Using CMake (recommended):
 ```bash
 mkdir build
 cd build
@@ -84,7 +81,13 @@ cmake .. -G "MinGW Makefiles"
 cmake --build .
 ```
 
-The output executable will be named `CppFormat.exe`.
+The output executable will be named `FormatoProcessor.exe` in the `build/bin` directory.
+
+#### Using g++ directly:
+First, download and install nlohmann/json, then:
+```bash
+g++ -I<path_to_nlohmann_json_include> main.cpp main_window.cpp file_utils.cpp -o CppFormat.exe -mwindows -lcomctl32 -lcomdlg32 -lgdi32 -lole32 -lshell32 -loleaut32 -luuid -std=c++17
+```
 
 ## Usage
 

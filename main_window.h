@@ -5,7 +5,10 @@
 #include <memory>
 
 class FileDialog;
-class CsvConfig;
+
+namespace FileUtils {
+    class JsonConfig;
+}
 
 class MainWindow {
 public:
@@ -23,21 +26,23 @@ private:
     void handleCsvFileSelect();
     void handleInputFileSelect();
     void handleProcess();
+    void handleClose();
     void updateStatus(const std::string& message);
     
     HINSTANCE hInstance;
     HWND hwnd = nullptr;
-    HWND hwndCsvFile = nullptr;
+    HWND hwndJsonFile = nullptr;
     HWND hwndInputFile = nullptr;
-    HWND hwndSeparator = nullptr;  // Added this line
+    HWND hwndSeparator = nullptr;
     HWND hwndProcessButton = nullptr;
+    HWND hwndCloseButton = nullptr;
     HWND hwndStatus = nullptr;
     
-    std::unique_ptr<FileDialog> csvFileDialog;
+    std::unique_ptr<FileDialog> jsonFileDialog;
     std::unique_ptr<FileDialog> inputFileDialog;
-    std::unique_ptr<CsvConfig> csvConfig;
+    std::unique_ptr<FileUtils::JsonConfig> jsonConfig;
     
-    std::string currentCsvPath;
+    std::string currentJsonPath;
     std::string currentInputPath;
     
     // Constants
@@ -48,8 +53,9 @@ private:
     
     // Control IDs
     enum ControlIds {
-        IDC_CSV_FILE = 1001,
+        IDC_JSON_FILE = 1001,
         IDC_INPUT_FILE,
-        IDC_PROCESS_BUTTON
+        IDC_PROCESS_BUTTON,
+        IDC_CLOSE_BUTTON
     };
 };

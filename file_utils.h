@@ -2,6 +2,7 @@
 
 #include <string>
 #include <stdexcept>
+#include "json_parser.h"
 
 namespace FileUtils {
     std::string readFile(const std::string& filePath);
@@ -9,8 +10,8 @@ namespace FileUtils {
     std::string getFileExtension(const std::string& filePath);
     bool fileExists(const std::string& filePath);
     
-    // Process file with CSV configuration and separator
-    std::string procesarArchivo(const std::string& csvFile, 
+    // Process file with JSON configuration and separator
+    std::string procesarArchivo(const std::string& jsonFile, 
                               const std::string& inputFile, 
                               const std::string& separator);
 }

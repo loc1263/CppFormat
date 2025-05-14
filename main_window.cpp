@@ -1,5 +1,5 @@
 #include "main_window.h"
-#include "csv_parser.h"
+#include "json_parser.h"
 #include "file_utils.h"
 #include <commctrl.h>
 #include <commdlg.h>
@@ -9,7 +9,21 @@
 class FileDialog {
 public:
     FileDialog(HWND owner, const std::wstring& title, const std::wstring& filter, bool save = false)
-        : owner(owner), title(title), filter(filter), isSave(save) {}
+        : owner(owner), title(title), isSave(save) {
+        // Convert the filter string to the correct format
+        // The format is: "Display Text\0*.ext\0All Files\0*.*\0\0"
+        // We need to replace '\0' with actual null terminators
+        for (size_t i = 0; i < filter.size(); ++i) {
+            if (filter[i] == L'\\' && i + 1 < filter.size() && filter[i+1] == L'0') {
+                filterBuffer.push_back(L'\0');
+                ++i; // Skip the '0'
+            } else {
+                filterBuffer.push_back(filter[i]);
+            }
+        }
+        // Ensure double null termination
+        filterBuffer.push_back(L'\0');
+    }
     
     std::string show() {
         wchar_t buffer[MAX_PATH] = {0};
@@ -17,11 +31,11 @@ public:
         OPENFILENAMEW ofn = {0};
         ofn.lStructSize = sizeof(OPENFILENAMEW);
         ofn.hwndOwner = owner;
-        ofn.lpstrFilter = filter.c_str();
+        ofn.lpstrFilter = filterBuffer.data();
         ofn.lpstrFile = buffer;
         ofn.nMaxFile = MAX_PATH;
         ofn.lpstrTitle = title.c_str();
-        ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST | OFN_NOCHANGEDIR;
+        ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST | OFN_NOCHANGEDIR | OFN_EXPLORER;
         
         BOOL result = isSave ? 
             GetSaveFileNameW(&ofn) : 
@@ -43,7 +57,8 @@ public:
 private:
     HWND owner;
     std::wstring title;
-    std::wstring filter;
+    std::wstring filterStr;  // Original filter string
+    std::vector<wchar_t> filterBuffer;  // Properly formatted filter string
     bool isSave;
 };
 
@@ -93,20 +108,20 @@ void MainWindow::create() {
     initializeControls();
     
     // Create file dialogs
-    csvFileDialog = std::make_unique<FileDialog>(
+    // Note: The filter string uses \0 as a separator
+    // Format: "Display Text\0*.ext\0All Files\0*.*\0\0"
+    // We use \\0 in the string to represent a single null character
+    jsonFileDialog = std::make_unique<FileDialog>(
         hwnd,
-        L"Select CSV Configuration File",
-        L"CSV Files (*.csv)\0*.csv\0All Files (*.*)\0*.*\0"
+        L"Select JSON Configuration File",
+        L"JSON Files (*.json)\\0*.json\\0All Files (*.*)\\0*.*\\0"
     );
     
     inputFileDialog = std::make_unique<FileDialog>(
         hwnd,
         L"Select Input File",
-        L"All Files (*.*)\0*.*\0"
+        L"Text Files (*.txt;*.json)\\0*.txt;*.json\\0All Files (*.*)\\0*.*\\0"
     );
-    
-    // Create CSV config
-    csvConfig = std::make_unique<CsvConfig>();
 }
 
 void MainWindow::show() {
@@ -123,21 +138,21 @@ void MainWindow::initializeControls() {
     
     int y = MARGIN;
     
-    // CSV File Selection
-    CreateWindowW(L"STATIC", L"CSV Configuration:", 
+    // JSON File Selection
+    CreateWindowW(L"STATIC", L"JSON Configuration:",
                  WS_VISIBLE | WS_CHILD,
                  MARGIN, y, LABEL_WIDTH, CONTROL_HEIGHT,
                  hwnd, NULL, hInstance, NULL);
     
-    hwndCsvFile = CreateWindowW(L"EDIT", L"",
+    hwndJsonFile = CreateWindowW(L"EDIT", L"",
                               WS_VISIBLE | WS_CHILD | WS_BORDER | ES_READONLY,
                               MARGIN + LABEL_WIDTH, y, 300, CONTROL_HEIGHT,
-                              hwnd, (HMENU)IDC_CSV_FILE, hInstance, NULL);
+                              hwnd, (HMENU)IDC_JSON_FILE, hInstance, NULL);
     
     CreateWindowW(L"BUTTON", L"Browse...",
                  WS_VISIBLE | WS_CHILD | BS_PUSHBUTTON,
                  MARGIN + LABEL_WIDTH + 310, y, BUTTON_WIDTH, CONTROL_HEIGHT,
-                 hwnd, (HMENU)IDC_CSV_FILE, hInstance, NULL);
+                 hwnd, (HMENU)IDC_JSON_FILE, hInstance, NULL);
     
     y += CONTROL_HEIGHT + MARGIN;
     
@@ -176,8 +191,16 @@ void MainWindow::initializeControls() {
     hwndProcessButton = CreateWindowW(
         L"BUTTON", L"Process",
         WS_VISIBLE | WS_CHILD | BS_PUSHBUTTON,
-        MARGIN, y, BUTTON_WIDTH, CONTROL_HEIGHT * 2,
+        MARGIN, y, BUTTON_WIDTH - 5, CONTROL_HEIGHT * 2,  // Reduced width to fit both buttons
         hwnd, (HMENU)IDC_PROCESS_BUTTON, hInstance, NULL
+    );
+    
+    // Close Button - positioned next to the Process button
+    hwndCloseButton = CreateWindowW(
+        L"BUTTON", L"Close",
+        WS_VISIBLE | WS_CHILD | BS_PUSHBUTTON,
+        MARGIN + BUTTON_WIDTH + 5, y, BUTTON_WIDTH - 5, CONTROL_HEIGHT * 2,  // Same size as Process button
+        hwnd, (HMENU)IDC_CLOSE_BUTTON, hInstance, NULL
     );
     
     // Status Bar
@@ -203,7 +226,7 @@ void MainWindow::handleCommand(WPARAM wParam) {
     
     // Handle the button click
     switch (controlId) {
-        case IDC_CSV_FILE:
+        case IDC_JSON_FILE:
             handleCsvFileSelect();
             break;
             
@@ -211,31 +234,33 @@ void MainWindow::handleCommand(WPARAM wParam) {
             handleInputFileSelect();
             break;
             
-        case IDC_PROCESS_BUTTON: {
-            // Disable the process button to prevent multiple clicks
-            EnableWindow(hwndProcessButton, FALSE);
-            
-            // Process the file
+        case IDC_PROCESS_BUTTON:
             handleProcess();
-            
-            // Re-enable the button
-            EnableWindow(hwndProcessButton, TRUE);
             break;
-        }
+            
+        case IDC_CLOSE_BUTTON:
+            handleClose();
+            break;
     }
 }
 
 void MainWindow::handleCsvFileSelect() {
     try {
-        std::string filePath = csvFileDialog->show();
+        std::string filePath = jsonFileDialog->show();
         if (!filePath.empty()) {
-            currentCsvPath = filePath;
-            SetWindowTextA(GetDlgItem(hwnd, IDC_CSV_FILE), filePath.c_str());
-            updateStatus("CSV file selected");
+            currentJsonPath = filePath;
+            SetWindowTextA(GetDlgItem(hwnd, IDC_JSON_FILE), filePath.c_str());
+            updateStatus("Configuration file selected");
+        } else {
+            DWORD error = CommDlgExtendedError();
+            if (error) {
+                std::stringstream ss;
+                ss << "Error selecting file: " << error;
+                updateStatus(ss.str());
+            }
         }
     } catch (const std::exception& e) {
-        MessageBoxA(hwnd, e.what(), "Error", MB_ICONERROR);
-        updateStatus("Error selecting CSV file");
+        updateStatus(std::string("Error: ") + e.what());
     }
 }
 
@@ -248,99 +273,93 @@ void MainWindow::handleInputFileSelect() {
             updateStatus("Input file selected");
         }
     } catch (const std::exception& e) {
-        MessageBoxA(hwnd, e.what(), "Error", MB_ICONERROR);
-        updateStatus("Error selecting input file");
+        updateStatus(std::string("Error: ") + e.what());
     }
 }
 
 void MainWindow::handleProcess() {
-    // Check if both files are selected
-    if (currentCsvPath.empty() || currentInputPath.empty()) {
-        MessageBoxA(hwnd, "Please select both CSV and input files", "Error", MB_ICONWARNING);
-        return;
-    }
-    
-    // Get separator (default to comma if empty)
-    wchar_t separator[2] = {0};
-    GetWindowTextW(hwndSeparator, separator, 2);
-    if (separator[0] == L'\0') {
-        separator[0] = L',';  // Default separator
-    }
-    
-    // Convert wide char to UTF-8
-    char separator_utf8[8] = {0};
-    WideCharToMultiByte(CP_UTF8, 0, separator, 1, separator_utf8, sizeof(separator_utf8), NULL, NULL);
-    
-    // Check if files exist
-    if (!FileUtils::fileExists(currentCsvPath) || !FileUtils::fileExists(currentInputPath)) {
-        MessageBoxA(hwnd, "One or both of the selected files do not exist", "Error", MB_ICONERROR);
-        return;
-    }
-    
-    // Disable UI during processing
-    EnableWindow(hwndCsvFile, FALSE);
-    EnableWindow(hwndInputFile, FALSE);
-    
     try {
-        updateStatus("Reading CSV configuration...");
-        
-        // Read and parse CSV
-        std::string csvContent = FileUtils::readFile(currentCsvPath);
-        if (csvContent.empty()) {
-            throw std::runtime_error("CSV file is empty");
+        if (currentJsonPath.empty()) {
+            updateStatus("Error: No JSON configuration file selected");
+            return;
         }
         
-        csvConfig->parse(csvContent);
-        
-        updateStatus("Reading input file...");
-        
-        // Read input file
-        std::string inputContent = FileUtils::readFile(currentInputPath);
-        if (inputContent.empty()) {
-            throw std::runtime_error("Input file is empty");
+        if (currentInputPath.empty()) {
+            updateStatus("Error: No input file selected");
+            return;
         }
         
-        updateStatus("Processing...");
+        // Get separator from edit control
+        char separator[2] = {0};
+        GetWindowTextA(hwndSeparator, separator, 2);
+        std::string sepStr(separator);
         
-        // Process the file with the specified separator
-        std::string result = FileUtils::procesarArchivo(currentCsvPath, currentInputPath, separator_utf8);
+        if (sepStr.empty()) {
+            sepStr = ",";  // Default separator
+        }
         
-        // Generate output path (add _processed before extension)
+        updateStatus("Processing file...");
+        
+        // Process the file
+        std::string result = FileUtils::procesarArchivo(
+            currentJsonPath,
+            currentInputPath,
+            sepStr
+        );
+        
+        // Generate output path
         std::string outputPath = currentInputPath;
-        size_t lastDot = outputPath.find_last_of('.');
-        if (lastDot != std::string::npos) {
-            outputPath.insert(lastDot, "_processed");
+        size_t dotPos = outputPath.find_last_of('.');
+        if (dotPos != std::string::npos) {
+            outputPath.insert(dotPos, "_processed");
         } else {
             outputPath += "_processed";
         }
         
-        // Save output file
+        // Save the result
         FileUtils::writeFile(outputPath, result);
         
-        updateStatus("Processing complete");
+        std::string successMsg = "File processed successfully!\n\n"
+                              "Input: " + currentInputPath + "\n"
+                              "Output: " + outputPath + "\n"
+                              "Records processed: " + std::to_string(std::count(result.begin(), result.end(), '\n'));
         
-        // Show success message
-        std::string successMsg = "File processed successfully!\n\n";
-        successMsg += "Output saved to:\n" + outputPath;
+        updateStatus("File processed successfully: " + outputPath);
         
-        MessageBoxA(hwnd, successMsg.c_str(), "Success", MB_ICONINFORMATION);
+        // Show success message box
+        MessageBoxA(hwnd, successMsg.c_str(), "Processing Complete", MB_OK | MB_ICONINFORMATION);
         
     } catch (const std::exception& e) {
-        // Show error message
-        std::string error = "An error occurred during processing:\n\n";
-        error += e.what();
-        
-        MessageBoxA(hwnd, error.c_str(), "Error", MB_ICONERROR);
-        updateStatus("Processing failed");
+        std::string errorMsg = "Error processing file:\n" + std::string(e.what());
+        updateStatus(errorMsg);
+        MessageBoxA(hwnd, errorMsg.c_str(), "Processing Error", MB_OK | MB_ICONERROR);
+    } catch (...) {
+        std::string errorMsg = "An unknown error occurred while processing the file";
+        updateStatus(errorMsg);
+        MessageBoxA(hwnd, errorMsg.c_str(), "Processing Error", MB_OK | MB_ICONERROR);
     }
     
     // Re-enable UI
-    EnableWindow(hwndCsvFile, TRUE);
-    EnableWindow(hwndInputFile, TRUE);
+    if (hwndJsonFile) EnableWindow(hwndJsonFile, TRUE);
+    if (hwndInputFile) EnableWindow(hwndInputFile, TRUE);
+    if (hwndProcessButton) EnableWindow(hwndProcessButton, TRUE);
 }
 
 void MainWindow::updateStatus(const std::string& message) {
     SetWindowTextA(hwndStatus, message.c_str());
+}
+
+void MainWindow::handleClose() {
+    // Show confirmation dialog
+    int result = MessageBoxW(hwnd, 
+        L"Are you sure you want to exit?", 
+        L"Confirm Exit", 
+        MB_YESNO | MB_ICONQUESTION | MB_DEFBUTTON2);
+    
+    if (result == IDYES) {
+        // Close the application
+        PostMessage(hwnd, WM_CLOSE, 0, 0);
+    }
 }
 
 LRESULT CALLBACK MainWindow::windowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
